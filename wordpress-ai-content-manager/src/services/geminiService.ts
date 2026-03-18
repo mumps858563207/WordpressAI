@@ -206,38 +206,3 @@ export const suggestAmazonProducts = async (keyword: string): Promise<any[]> => 
   }
 };
 
-/**
- * 生成圖片
- * 使用 DALL-E 3 根據提示詞生成圖片
- */
-export const generateImage = async (prompt: string): Promise<string> => {
-  await initializeOpenAI();
-  
-  try {
-    console.log(`正在生成圖片，提示詞: ${prompt}`);
-    
-    // 檢查是否支持圖片生成
-    // 如果使用的是兼容 OpenAI 的 API（如 Gemini），可能不支持圖片生成
-    // 在這種情況下，返回一個佔位符或空字符串
-    
-    try {
-      const response = await openai.images.generate({
-        model: "dall-e-3",
-        prompt: prompt,
-        n: 1,
-        size: "1024x1024"
-      });
-      
-      return response.data[0].url || "";
-    } catch (imageError: any) {
-      // 如果圖片生成不支持，記錄錯誤並返回空字符串
-      console.warn("圖片生成不支持或失敗，返回空字符串:", imageError.message);
-      return "";
-    }
-    
-  } catch (error: any) {
-    console.error("生成圖片失敗:", error.message);
-    // 不拋出錯誤，因為圖片生成是可選的
-    return "";
-  }
-};
