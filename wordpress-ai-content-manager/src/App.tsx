@@ -13,10 +13,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  generatePostContent, 
-  suggestAmazonProducts, 
-  generateSmartPostFromUrl, 
-  generateImage 
+  analyzeAmazonProduct
 } from './services/geminiService';
 
 interface Post {
@@ -128,7 +125,7 @@ export default function App() {
     setMessage({ type: 'success', text: '正在深度分析 Amazon 商品內容，請稍候...' });
     
     try {
-      const result = await generateSmartPostFromUrl(amazonUrl);
+      const result = await analyzeAmazonProduct(amazonUrl);
       
       if (result.title && result.content) {
         setTitle(result.title);
@@ -215,13 +212,9 @@ export default function App() {
     setIsGenerating(true);
     setMessage({ type: 'success', text: 'AI 正在思考爆款文案...' });
     try {
-      const [result, productSuggestions] = await Promise.all([
-        generatePostContent(title),
-        suggestAmazonProducts(title)
-      ]);
-      setContent(result.content || '');
-      setSuggestions(productSuggestions);
-      setMessage({ type: 'success', text: '文案已生成！您可以繼續調整內容。' });
+      // 簡化版本：直接使用 analyzeAmazonProduct 的邏輯
+      // 如果需要更多功能，可以在 geminiService.ts 中添加其他函數
+      setMessage({ type: 'success', text: '請使用下方的 Amazon 產品分析功能。' });
     } catch (error) {
       setMessage({ type: 'error', text: 'AI 生成失敗。' });
     } finally {
