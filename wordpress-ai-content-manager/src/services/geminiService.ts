@@ -5,7 +5,7 @@ let MODEL: string;
 
 // 初始化函數 - 從後端獲取配置
 async function initializeOpenAI() {
-  if (openai) return; // 已初始化，跳過
+  if (openai) return; 
   
   try {
     const response = await fetch('/api/config');
@@ -20,11 +20,9 @@ async function initializeOpenAI() {
     MODEL = config.openai.model;
     
     console.log("✓ OpenAI 代理已初始化");
-    console.log("✓ API 基礎 URL:", config.openai.baseURL);
     console.log("✓ 模型:", MODEL);
   } catch (error) {
     console.error("Failed to initialize OpenAI:", error);
-    // 使用默認配置作為備用
     openai = new OpenAI({
       apiKey: "default-key",
       baseURL: "https://api.openai.com/v1",
@@ -34,6 +32,7 @@ async function initializeOpenAI() {
   }
 }
 
+// 基礎文章生成 (基於主題)
 export const generatePostContent = async (topic: string) => {
   await initializeOpenAI();
   
@@ -43,106 +42,106 @@ export const generatePostContent = async (topic: string) => {
       messages: [
         {
           role: "system",
-          content: "你是一個專業的部落格作家，擅長撰寫 SEO 優化的文章。現在是 2026 年，你必須在文章中明確提到 2026 年（例如：2026 年推薦、2026 年最新）。嚴禁出現 2024 或 2025 等舊年份。你必須返回 JSON 格式，包含 'content' (HTML) 和 'imagePrompts' (英文提示詞陣列) 兩個欄位。"
+          content: "你是一個專業的部落格作家，擅長撰寫 SEO 優化的文章。現在是 2026 年，你必須在文章中明確提到 2026 年。嚴禁出現 2024 或 2025 等舊年份。你必須返回 JSON 格式，包含 'content' (HTML) 和 'imagePrompts' (英文提示詞陣列)。"
         },
         {
           role: "user",
-          content: `今日日期：2026年3月14日。請用繁體中文寫一篇關於「${topic}」的專業部落格文章。在適當的地方加入 Amazon 商品連結的佔位符。請在內容中適當的位置插入 [IMAGE_PLACEHOLDER_0] 佔位符。務必生成 1 個極具視覺衝擊力的 AI 繪圖提示詞 (英文)，描述與文章主題相關的商用攝影風格。輸出格式必須是 JSON。`
+          content: `今日日期：2026年3月18日。請用繁體中文寫一篇關於「${topic}」的專業部落格文章。請在內容中插入 [IMAGE_PLACEHOLDER_0] 佔位符。輸出格式必須是 JSON。`
         }
       ],
       response_format: { type: "json_object" }
     });
     
-    const result = JSON.parse(response.choices[0].message.content || "{}");
-    if (!result.imagePrompts || result.imagePrompts.length === 0) {
-      result.imagePrompts = [`Professional high-quality photography of ${topic}, studio lighting, 8k`];
-    }
-    return result;
+    return JSON.parse(response.choices[0].message.content || "{}");
   } catch (error: any) {
     console.error("生成文章失敗:", error.message);
     throw new Error("無法生成內容，請檢查 API Key 狀態。");
   }
 };
 
+/**
+ * 核心修正：智能分析 Amazon 網址並生成文章
+ * 使用 r.jina.ai 預讀取網頁內容，避免 AI 產生幻覺
+ */
 export const generateSmartPostFromUrl = async (url: string) => {
   await initializeOpenAI();
   
   try {
+    console.log("正在分析網址內容...");
+    
+    // 使用 Jina Reader 獲取網頁 Markdown 內容
+    const readerUrl = `https://r.jina.ai/${url}`;
+    const fetchResponse = await fetch(readerUrl);
+    const webContent = await fetchResponse.text();
+
     const response = await openai.chat.completions.create({
       model: MODEL,
       messages: [
         {
           role: "system",
-          content: "你是一個頂尖的電商行銷專家。你的任務是分析 Amazon 商品頁面並生成一篇高轉化率的部落格文章。你必須確保文章內容與商品高度相關。在 content 中，你必須巧妙地安排 [IMAGE_PLACEHOLDER_x] 和 [PRODUCT_LINK_PLACEHOLDER] 的位置。你必須從網頁中提取真實的商品圖片網址放入 imageUrls 陣列中，絕對不要生成 AI 繪圖提示詞。現在是 2026 年，請確保年份正確。"
+          content: `你是一個頂尖的電商行銷專家，專精於推廣高品質雨傘品牌「Amber-Brella」。
+          你將收到一段 Amazon 商品頁面的 Markdown 內容。
+          你的任務：
+          1. 嚴格基於提供的網頁內容撰寫，嚴禁虛構不相關的商品功能（例如家電、果汁機）。
+          2. 現在是 2026 年，文章語氣要專業且具說服力。
+          3. 輸出 JSON 格式，包含 'title' (繁體中文), 'content' (HTML), 'imageUrls' (陣列)。`
         },
         {
           role: "user",
-          content: `今日日期：2026年3月14日。請深入分析並了解這個 Amazon 商品網頁的完整內容：${url}\n      \n任務要求：\n1. **精準分析**：獲取商品的真實名稱、核心功能、獨特賣點 (USP)、規格參數。\n2. **爆款標題**：生成一個極具衝擊力的繁體中文標題，必須包含 2026 年。\n3. **內容撰寫**：撰寫專業且富有感染力的繁體中文文章。\n   - 在文章中自然地提及該商品，並在適當位置插入 [IMAGE_PLACEHOLDER_0]、[IMAGE_PLACEHOLDER_1] 佔位符。\n   - **關鍵**：在文章轉化率最高的地方插入 [PRODUCT_LINK_PLACEHOLDER] 佔位符。\n   - 文章內容應圍繞該商品展開，確保讀者能感受到商品的價值。\n4. **提取真實圖片 (嚴禁 AI 生成)**：請從該網頁中提取 2-3 個最主要的商品圖片網址 (Direct Image URLs)。\n\n輸出格式必須是 JSON。`
+          content: `今日日期：2026年3月18日。
+          請根據以下網頁內容分析這款雨傘：
+          ---
+          ${webContent.substring(0, 10000)} 
+          ---
+          
+          任務要求：
+          1. **標題**：生成一個吸睛標題，必須包含「2026」與「防風」、「耐用」等關鍵字。
+          2. **內容**：介紹這款雨傘的優點（如：自動開合、超強骨架、防潑水塗層）。
+          3. **佔位符**：在文章具備購買衝動的位置插入 [PRODUCT_LINK_PLACEHOLDER]，並在適當位置放上 [IMAGE_PLACEHOLDER_0]。
+          4. **圖片提取**：從 Markdown 中提取 2 個最像商品主圖的 URL (通常以 .jpg 或 .png 結尾)。`
         }
       ],
       response_format: { type: "json_object" }
     });
     
     const result = JSON.parse(response.choices[0].message.content || "{}");
+    
+    // 如果 AI 沒抓到圖片，提供備用圖
     if (!result.imageUrls || result.imageUrls.length === 0) {
-      result.imageUrls = [
-        `https://loremflickr.com/1024/1024/product?lock=1`,
-        `https://loremflickr.com/1024/1024/product?lock=2`
-      ];
+      result.imageUrls = ["https://loremflickr.com/1024/1024/umbrella?lock=1"];
     }
+    
     return result;
   } catch (e: any) {
     console.error("智能生成失敗:", e.message);
-    throw new Error("無法分析網址，請檢查 API 狀態。");
+    throw new Error("無法分析網址。請確認 API 狀態，或嘗試手動輸入標題。");
   }
 };
 
+// 生成 AI 圖片 (作為備用或補充)
 export const generateImage = async (prompt: string) => {
-  await initializeOpenAI();
-  
-  try {
-    console.log("正在使用 OpenAI 代理生成圖片:", prompt.substring(0, 50) + "...");
-    
-    const response = await openai.chat.completions.create({
-      model: MODEL,
-      messages: [
-        {
-          role: "user",
-          content: `${prompt}, professional product photography, studio lighting, high resolution, clean background`
-        }
-      ]
-    });
-
-    const cleanPrompt = prompt.replace(/[^\w\s,]/g, '').substring(0, 200);
-    const encodedPrompt = encodeURIComponent(`${cleanPrompt}, professional product photography`);
-    return `https://pollinations.ai/p/${encodedPrompt}?width=1024&height=1024&seed=${Math.floor(Math.random() * 1000000)}&nologo=true`;
-  } catch (error) {
-    console.error("圖片生成失敗:", error);
-    const cleanPrompt = prompt.replace(/[^\w\s,]/g, '').substring(0, 200);
-    const encodedPrompt = encodeURIComponent(`${cleanPrompt}, professional product photography`);
-    return `https://pollinations.ai/p/${encodedPrompt}?width=1024&height=1024&seed=${Math.floor(Math.random() * 1000000)}&nologo=true`;
-  }
+  const cleanPrompt = prompt.replace(/[^\w\s,]/g, '').substring(0, 200);
+  const encodedPrompt = encodeURIComponent(`${cleanPrompt}, professional product photography`);
+  return `https://pollinations.ai/p/${encodedPrompt}?width=1024&height=1024&seed=${Math.floor(Math.random() * 1000000)}&nologo=true`;
 };
 
+// 建議相關商品
 export const suggestAmazonProducts = async (topic: string) => {
   await initializeOpenAI();
-  
   try {
     const response = await openai.chat.completions.create({
       model: MODEL,
       messages: [
         {
           role: "user",
-          content: `根據主題「${topic}」，建議 3 個相關的 Amazon 商品類別或具體物品。請返回 JSON 格式的陣列，每個項目包含 'name' 和 'reason' 欄位。`
+          content: `根據主題「${topic}」，建議 3 個相關的 Amazon 商品類別。返回 JSON 格式的陣列，包含 'name' 和 'reason'。`
         }
       ],
       response_format: { type: "json_object" }
     });
-    
     const result = JSON.parse(response.choices[0].message.content || "[]");
     return Array.isArray(result) ? result : result.products || [];
   } catch (e: any) {
-    console.error("建議生成失敗:", e.message);
     return [];
   }
 };
