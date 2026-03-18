@@ -1,19 +1,42 @@
 import OpenAI from "openai";
 
-// 從環境變數讀取配置，不再硬編碼 API Key
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "default-key",
-  baseURL: process.env.OPENAI_API_BASE || "https://api.openai.com/v1",
-  dangerouslyAllowBrowser: true,
-});
+let openai: OpenAI;
+let MODEL: string;
 
-const MODEL = process.env.OPENAI_MODEL || "gpt-4";
-
-console.log("✓ OpenAI 代理已初始化");
-console.log("✓ API 基礎 URL:", process.env.OPENAI_API_BASE ? "已配置" : "使用預設值");
-console.log("✓ 模型:", MODEL);
+// 初始化函數 - 從後端獲取配置
+async function initializeOpenAI() {
+  if (openai) return; // 已初始化，跳過
+  
+  try {
+    const response = await fetch('/api/config');
+    const config = await response.json();
+    
+    openai = new OpenAI({
+      apiKey: config.openai.apiKey,
+      baseURL: config.openai.baseURL,
+      dangerouslyAllowBrowser: true,
+    });
+    
+    MODEL = config.openai.model;
+    
+    console.log("✓ OpenAI 代理已初始化");
+    console.log("✓ API 基礎 URL:", config.openai.baseURL);
+    console.log("✓ 模型:", MODEL);
+  } catch (error) {
+    console.error("Failed to initialize OpenAI:", error);
+    // 使用默認配置作為備用
+    openai = new OpenAI({
+      apiKey: "default-key",
+      baseURL: "https://api.openai.com/v1",
+      dangerouslyAllowBrowser: true,
+    });
+    MODEL = "gpt-4";
+  }
+}
 
 export const generatePostContent = async (topic: string) => {
+  await initializeOpenAI();
+  
   try {
     const response = await openai.chat.completions.create({
       model: MODEL,
@@ -42,6 +65,8 @@ export const generatePostContent = async (topic: string) => {
 };
 
 export const generateSmartPostFromUrl = async (url: string) => {
+  await initializeOpenAI();
+  
   try {
     const response = await openai.chat.completions.create({
       model: MODEL,
@@ -52,18 +77,7 @@ export const generateSmartPostFromUrl = async (url: string) => {
         },
         {
           role: "user",
-          content: `今日日期：2026年3月14日。請深入分析並了解這個 Amazon 商品網頁的完整內容：${url}
-      
-任務要求：
-1. **精準分析**：獲取商品的真實名稱、核心功能、獨特賣點 (USP)、規格參數。
-2. **爆款標題**：生成一個極具衝擊力的繁體中文標題，必須包含 2026 年。
-3. **內容撰寫**：撰寫專業且富有感染力的繁體中文文章。
-   - 在文章中自然地提及該商品，並在適當位置插入 [IMAGE_PLACEHOLDER_0]、[IMAGE_PLACEHOLDER_1] 佔位符。
-   - **關鍵**：在文章轉化率最高的地方插入 [PRODUCT_LINK_PLACEHOLDER] 佔位符。
-   - 文章內容應圍繞該商品展開，確保讀者能感受到商品的價值。
-4. **提取真實圖片 (嚴禁 AI 生成)**：請從該網頁中提取 2-3 個最主要的商品圖片網址 (Direct Image URLs)。
-
-輸出格式必須是 JSON。`
+          content: `今日日期：2026年3月14日。請深入分析並了解這個 Amazon 商品網頁的完整內容：${url}\n      \n任務要求：\n1. **精準分析**：獲取商品的真實名稱、核心功能、獨特賣點 (USP)、規格參數。\n2. **爆款標題**：生成一個極具衝擊力的繁體中文標題，必須包含 2026 年。\n3. **內容撰寫**：撰寫專業且富有感染力的繁體中文文章。\n   - 在文章中自然地提及該商品，並在適當位置插入 [IMAGE_PLACEHOLDER_0]、[IMAGE_PLACEHOLDER_1] 佔位符。\n   - **關鍵**：在文章轉化率最高的地方插入 [PRODUCT_LINK_PLACEHOLDER] 佔位符。\n   - 文章內容應圍繞該商品展開，確保讀者能感受到商品的價值。\n4. **提取真實圖片 (嚴禁 AI 生成)**：請從該網頁中提取 2-3 個最主要的商品圖片網址 (Direct Image URLs)。\n\n輸出格式必須是 JSON。`
         }
       ],
       response_format: { type: "json_object" }
@@ -84,6 +98,8 @@ export const generateSmartPostFromUrl = async (url: string) => {
 };
 
 export const generateImage = async (prompt: string) => {
+  await initializeOpenAI();
+  
   try {
     console.log("正在使用 OpenAI 代理生成圖片:", prompt.substring(0, 50) + "...");
     
@@ -109,6 +125,8 @@ export const generateImage = async (prompt: string) => {
 };
 
 export const suggestAmazonProducts = async (topic: string) => {
+  await initializeOpenAI();
+  
   try {
     const response = await openai.chat.completions.create({
       model: MODEL,
