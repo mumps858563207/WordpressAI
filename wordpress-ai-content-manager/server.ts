@@ -47,6 +47,17 @@ async function startServer() {
       }
     });
 
+    // OpenAI Configuration Endpoint
+    app.get('/api/config', (req, res) => {
+      res.json({
+        openai: {
+          apiKey: process.env.OPENAI_API_KEY || 'default-key',
+          baseURL: process.env.OPENAI_API_BASE || 'https://api.openai.com/v1',
+          model: process.env.OPENAI_MODEL || 'gpt-4'
+        }
+      });
+    });
+
     // Get Current User Info
     app.get('/api/me', async (req, res) => {
       try {
