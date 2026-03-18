@@ -1,193 +1,84 @@
 import OpenAI from "openai";
 
 /**
- * 定義回傳資料格式，讓 TypeScript 提供更好的提示
+ * 定義回傳資料格式
  */
-export interface GeneratedPost {
-  title?: string;
-  content: string;
-  imageUrls?: string[];
-  imagePrompts?: string[];
+export interface AmazonAnalysisResult {
+  title: string;        // 火爆的主題名稱
+  content: string;      // 頂級銷售員撰寫的成交文案 (HTML)
+  imageUrls: string[];  // 抓取到的 2-3 個產品圖片網址
+  productFeatures: string[]; // 產品核心優點
 }
 
 let openai: OpenAI;
 let MODEL: string;
 
-/**
- * 初始化函數 - 從後端獲取配置
- * 建議：在 2026 年，建議將此邏輯放在 Server Side (如 Next.js API Routes)
- */
 async function initializeOpenAI() {
   if (openai) return; 
-  
   try {
     const response = await fetch('/api/config');
-    if (!response.ok) throw new Error("無法獲取後端配置");
-    
     const config = await response.json();
-    
     openai = new OpenAI({
       apiKey: config.openai.apiKey,
       baseURL: config.openai.baseURL,
-      dangerouslyAllowBrowser: true, // 注意：正式環境建議移至後端以隱藏 Key
-    });
-    
-    MODEL = config.openai.model || "gpt-4o"; // 預設使用 2026 年主流模型
-    
-    console.log("✓ OpenAI 代理已初始化");
-  } catch (error) {
-    console.error("初始化失敗，切換至預設配置:", error);
-    openai = new OpenAI({
-      apiKey: "your-fallback-key",
-      baseURL: "https://api.openai.com/v1",
       dangerouslyAllowBrowser: true,
     });
-    MODEL = "gpt-4-turbo";
+    MODEL = config.openai.model || "gpt-4o";
+  } catch (error) {
+    console.error("初始化失敗:", error);
+    // 預設備用方案
+    openai = new OpenAI({
+      apiKey: "YOUR_API_KEY", 
+      dangerouslyAllowBrowser: true,
+    });
+    MODEL = "gpt-4o";
   }
 }
 
 /**
- * 核心功能：智能分析 Amazon 網址並生成文章
- * 使用 r.jina.ai 預讀取網頁內容，有效過濾廣告並精準抓取商品資訊
+ * 核心功能：Amazon 網址深度分析與頂級銷售成交文案生成
  */
-export const generateSmartPostFromUrl = async (url: string): Promise<GeneratedPost> => {
+export const analyzeAmazonProduct = async (url: string): Promise<AmazonAnalysisResult> => {
   await initializeOpenAI();
   
   try {
-    console.log(`正在透過 Jina Reader 分析網址: ${url}`);
+    console.log(`正在分析產品網址: ${url}`);
     
-    // 1. 使用 Jina Reader 獲取網頁 Markdown 內容
+    // 1. 使用 Jina Reader 獲取網頁資訊
     const readerUrl = `https://r.jina.ai/${url}`;
     const fetchResponse = await fetch(readerUrl);
-    if (!fetchResponse.ok) throw new Error("Jina Reader 抓取網頁失敗");
-    
+    if (!fetchResponse.ok) throw new Error("無法讀取 Amazon 網頁內容");
     const webContent = await fetchResponse.text();
 
-    // 2. 呼叫 OpenAI 進行分析與撰寫
+    // 2. 呼叫 AI 進行「頂級銷售員」模式分析
     const response = await openai.chat.completions.create({
       model: MODEL,
       messages: [
         {
           role: "system",
-          content: `你是一個頂尖的電商行銷專家。
-          任務：根據提供的 Amazon 商品 Markdown 內容撰寫推廣文章。
-          要求：
-          1. 現在是 2026 年，內容必須包含「2026」年份關鍵字。
-          2. 文章語氣要專業、具說服力，並針對台灣市場使用繁體中文。
-          3. 嚴禁虛構功能，只撰寫內容中提到的優點。
-          4. 輸出必須是純 JSON 格式，包含 'title', 'content' (HTML格式), 'imageUrls' (從內容中提取的圖片網址)。`
+          content: `你現在是全球頂尖的「成交之神」銷售員。你的字典裡沒有「賣不出去」這四個字。
+          任務要求：
+          1. 找出網頁內容中 2-3 個最像商品主圖的 URL (通常以 .jpg 或 .png 結尾)。
+          2. 根據產品特性，生成一個 2026 年最火爆、讓人一看就想點進去的標題。
+          3. 條列式整理產品的致命吸引力 (優點)。
+          4. 以頂級銷售員的口吻撰寫成交文案：包含痛點擊碎、心理暗示、急迫感營造，讓客戶現在就想下單。
+          5. 語系：繁體中文 (台灣習慣用語)。
+          6. 格式：純 JSON。`
         },
         {
           role: "user",
           content: `今日日期：2026年3月18日。
-          商品網頁內容分析：
+          請分析以下產品內容並啟動成交模式：
           ---
           ${webContent.substring(0, 8000)} 
           ---
           
-          具體任務：
-          1. 標題：需包含「2026」與「火爆」、「推薦」等誘人字眼。
-          2. 內容：介紹產品優點，並在適當位置插入 [PRODUCT_LINK_PLACEHOLDER] 與 [IMAGE_PLACEHOLDER_0]。
-          3. 圖片：從 Markdown 中提取 2 個最像商品主圖的 URL (通常是 .jpg 或 .png)。`
-        }
-      ],
-      response_format: { type: "json_object" }
-    });
-    
-    const resultText = response.choices[0].message.content;
-    if (!resultText) throw new Error("AI 回傳內容為空");
-
-    return JSON.parse(resultText) as GeneratedPost;
-    
-  } catch (error: any) {
-    console.error("生成文章失敗:", error.message);
-    throw new Error(`自動化生成中斷: ${error.message}`);
-  }
-};
-
-/**
- * 生成文章內容
- * 根據標題或主題生成高質量的文章內容
- */
-export const generatePostContent = async (topic: string): Promise<GeneratedPost> => {
-  await initializeOpenAI();
-  
-  try {
-    console.log(`正在為主題生成文章內容: ${topic}`);
-    
-    const response = await openai.chat.completions.create({
-      model: MODEL,
-      messages: [
-        {
-          role: "system",
-          content: `你是一個專業的內容創作者和行銷文案專家。
-          任務：根據給定的主題或標題生成高質量、吸引人的文章內容。
-          要求：
-          1. 現在是 2026 年，內容應該包含現代化的觀點和 2026 年的趨勢。
-          2. 使用繁體中文，針對台灣市場。
-          3. 內容應該是 HTML 格式，包含適當的段落標籤和格式。
-          4. 輸出必須是純 JSON 格式，包含 'title' 和 'content' 欄位。`
-        },
-        {
-          role: "user",
-          content: `請根據以下主題生成一篇高質量的文章：
-          主題：${topic}
-          
-          請生成一篇 800-1200 字的文章，包含引人入勝的開場、詳細的內容段落和有力的結論。
-          返回 JSON 格式：{ "title": "文章標題", "content": "<p>HTML 格式的內容</p>" }`
-        }
-      ],
-      response_format: { type: "json_object" }
-    });
-    
-    const resultText = response.choices[0].message.content;
-    if (!resultText) throw new Error("AI 回傳內容為空");
-    
-    const result = JSON.parse(resultText);
-    return {
-      title: result.title || topic,
-      content: result.content || ""
-    } as GeneratedPost;
-    
-  } catch (error: any) {
-    console.error("生成文章失敗:", error.message);
-    throw new Error(`生成文章中斷: ${error.message}`);
-  }
-};
-
-/**
- * 建議 Amazon 產品
- * 根據關鍵字或主題建議相關的 Amazon 產品
- */
-export const suggestAmazonProducts = async (keyword: string): Promise<any[]> => {
-  await initializeOpenAI();
-  
-  try {
-    console.log(`正在為關鍵字建議 Amazon 產品: ${keyword}`);
-    
-    const response = await openai.chat.completions.create({
-      model: MODEL,
-      messages: [
-        {
-          role: "system",
-          content: `你是一個 Amazon 產品專家和電商顧問。
-          任務：根據給定的關鍵字或主題建議相關的 Amazon 產品。
-          要求：
-          1. 建議應該是實用的、高評分的產品。
-          2. 返回 JSON 格式的產品陣列，每個產品包含 'name' 和 'reason' 欄位。
-          3. 建議 3-5 個產品。
-          4. 使用繁體中文。`
-        },
-        {
-          role: "user",
-          content: `請根據關鍵字 "${keyword}" 建議 3-5 個 Amazon 上的相關產品。
-          
-          返回 JSON 格式：
+          輸出 JSON 格式必須如下：
           {
-            "suggestions": [
-              { "name": "產品名稱", "reason": "為什麼推薦這個產品" },
-              ...
-            ]
+            "title": "火爆標題 (含2026關鍵字)",
+            "productFeatures": ["優點1", "優點2", "優點3"],
+            "content": "<h1>成交文案...</h1><p>運用心理學與急迫感...</p>",
+            "imageUrls": ["圖片網址1", "圖片網址2"]
           }`
         }
       ],
@@ -195,14 +86,22 @@ export const suggestAmazonProducts = async (keyword: string): Promise<any[]> => 
     });
     
     const resultText = response.choices[0].message.content;
-    if (!resultText) throw new Error("AI 回傳內容為空");
-    
+    if (!resultText) throw new Error("AI 銷售員沒說話，請重試。");
+
     const result = JSON.parse(resultText);
-    return result.suggestions || [];
+    
+    // 確保 imageUrls 只有 2-3 個
+    const images = (result.imageUrls || []).slice(0, 3);
+
+    return {
+      title: result.title,
+      content: result.content,
+      imageUrls: images,
+      productFeatures: result.productFeatures
+    };
     
   } catch (error: any) {
-    console.error("建議產品失敗:", error.message);
-    throw new Error(`建議產品中斷: ${error.message}`);
+    console.error("分析失敗:", error.message);
+    throw new Error(`分析失敗: ${error.message}`);
   }
 };
-
